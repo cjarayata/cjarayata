@@ -1,0 +1,50 @@
+---
+title: "Coffee Nerdery"
+output: html_document
+date: '2022-06-17'
+author: 'CJ Arayata'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(tidyverse)
+```
+
+## Title
+
+```{r}
+
+# read in publicly-accessible csv that you use to log your daily coffee making
+raw_coffee_data <- read_csv("https://docs.google.com/spreadsheets/d/e/2PACX-1vRFRdo6gr0uTa3LNSdcMXdAq0MGQcb3OLKKnbpVxYOMogTvnZEHhiEvlQo4SZLJfHXaBVtCAjxZGX7J/pub?gid=3766389&single=true&output=csv")
+
+names(raw_coffee_data)
+# process the raw columns
+
+## make coffee names consistent
+## clean up ratios
+## remove "F" for temp
+## hand-edit "true ratings" in google sheet
+## fill in roast dates
+## calculate new variable - time since roast
+## potentially, time since bag open?
+
+## lookup table for what kind of coffee varietal
+## lookup table for what kind of process
+
+coffee_summary <- raw_coffee_data %>% 
+        group_by(`What coffee are you making?`) %>% 
+        summarise(num_times_made = n(),
+                  mean_rating = mean(`How was the coffee? (Scale of 1-10)`)) %>% 
+        arrange(desc(mean_rating))
+
+# factorize levels so they appear in descending order
+coffee_summary %>% 
+        filter(num_times_made > 2) %>% 
+        ggplot(aes(x = `What coffee are you making?`,
+                   y = mean_rating)) +
+        geom_col()
+```
