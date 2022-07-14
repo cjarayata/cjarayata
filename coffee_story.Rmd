@@ -12,6 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r}
 library(tidyverse)
+library(lubridate)
 ```
 
 ## Title
@@ -22,29 +23,72 @@ library(tidyverse)
 raw_coffee_data <- read_csv("https://docs.google.com/spreadsheets/d/e/2PACX-1vRFRdo6gr0uTa3LNSdcMXdAq0MGQcb3OLKKnbpVxYOMogTvnZEHhiEvlQo4SZLJfHXaBVtCAjxZGX7J/pub?gid=3766389&single=true&output=csv")
 
 names(raw_coffee_data)
-# process the raw columns
 
-## make coffee names consistent
-## clean up ratios
-## remove "F" for temp
-## hand-edit "true ratings" in google sheet
-## fill in roast dates
-## calculate new variable - time since roast
-## potentially, time since bag open?
+processed_coffee_data <- raw_coffee_data %>% 
+        select(brew_date = "Timestamp",
+               coffee = "What coffee are you making?",
+               roast_date = "What's the roast date?",
+               ratio = "What ratio are you using?",
+               water_volume = "What's your target total volume?",
+               coffee_weight = "How much coffee did you use?",
+               brew_method = "What brewing method did you use?",
+               water_temp = "What water temperature did you use?",
+               grind_size = "What grind size did you use?",
+               total_brew_time = "What was the total brew time?",
+               rating = "Rating (Scale of 1-10)",
+               notes = "Any notes to add?"
+               ) %>% 
+        mutate(brew_date = mdy_hms(brew_date) %>% as_date(),
+               # roast_date = mdy(roast_date))
+               roast_date = case_when(coffee == "Elixr - Wilton Benitez" ~ as_date("2022-05-12"),
+                                      TRUE ~ mdy(roast_date)),
+               days_since_roast = brew_date - roast_date)
+
+# bag open date is generally the first date you roasted the coffee
+first_brew_dates <- processed_coffee_data %>% 
+        group_by(coffee, roast_date) %>%
+        summarise(bag_open_date = min(brew_date), .groups = "drop")
+
+processed_coffee_data <- processed_coffee_data %>% 
+        left_join(first_brew_dates) %>% 
+        mutate(days_since_bag_open = brew_date - bag_open_date)
 
 ## lookup table for what kind of coffee varietal
 ## lookup table for what kind of process
 
-coffee_summary <- raw_coffee_data %>% 
-        group_by(`What coffee are you making?`) %>% 
+# what is the best elixr coffee?
+elixr_coffees <- processed_coffee_data %>% 
+        filter(str_detect(coffee, "Elixr")) %>% 
+        arrange(roast_date, coffee) %>% 
+        mutate(coffee_label = str_remove(coffee, "Elixr - "),
+               coffee_label = glue::glue("{coffee_label} ({roast_date})"))
+        
+elixr_coffees %>%        
+        group_by(coffee) %>% 
         summarise(num_times_made = n(),
-                  mean_rating = mean(`How was the coffee? (Scale of 1-10)`)) %>% 
+                  mean_rating = mean(rating)) %>% 
         arrange(desc(mean_rating))
 
-# factorize levels so they appear in descending order
-coffee_summary %>% 
-        filter(num_times_made > 2) %>% 
-        ggplot(aes(x = `What coffee are you making?`,
-                   y = mean_rating)) +
-        geom_col()
+elixr_coffees %>% 
+        filter(brew_method == "Hoffmann V60",
+               !str_detect(coffee, "Espresso|Odako")) %>% 
+        ggplot(aes(x = days_since_roast, y = rating, color = coffee_label)) +
+        geom_line(size = 2) +
+        theme_classic() +
+                theme(legend.position = "none") +
+        coord_cartesian(ylim = c(0, 10)) +
+        scale_x_continuous(breaks = seq(0, 30, 5)) +
+        facet_wrap(~coffee_label)
+
+elixr_coffees %>% 
+        filter(
+                # brew_method == "Hoffmann V60",
+               !str_detect(coffee, "Espresso|Odako")) %>% 
+        ggplot(aes(x = days_since_bag_open, y = rating, color = coffee_label)) +
+        geom_line(size = 2) +
+        theme_classic() +
+                theme(legend.position = "none") +
+        coord_cartesian(ylim = c(0, 10)) +
+        scale_x_continuous(breaks = seq(0, 30, 5)) +
+        facet_wrap(~coffee_label)
 ```
