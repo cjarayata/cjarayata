@@ -30,6 +30,7 @@ processed_coffee_data <- raw_coffee_data %>%
                roast_date = "What's the roast date?",
                ratio = "What ratio are you using?",
                water_volume = "What's your target total volume?",
+               water_type = "What water are you using?",
                coffee_weight = "How much coffee did you use?",
                brew_method = "What brewing method did you use?",
                water_temp = "What water temperature did you use?",
