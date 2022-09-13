@@ -887,7 +887,7 @@ body:not(.lg-from-hash) .lg-outer.lg-start-zoom .lg-item.lg-complete .lg-object 
   display: none;
 }
 .lg-outer.lg-hide-download #lg-download {
-  display: none;
+  display: none !important;
 }
 
 .lg-backdrop {
