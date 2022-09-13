@@ -40,7 +40,9 @@ processed_coffee_data <- raw_coffee_data %>%
                notes = "Any notes to add?"
                ) %>% 
         mutate(brew_date = mdy_hms(brew_date) %>% as_date(),
-               # roast_date = mdy(roast_date))
+               water_type = case_when(is.na(water_type) & brew_date < "2022-05-25" ~ "Philly Tap",
+                                      is.na(water_type) ~ "Pur Filtered",
+                                      TRUE ~ as.character(water_type)),
                roast_date = case_when(coffee == "Elixr - Wilton Benitez" ~ as_date("2022-05-12"),
                                       TRUE ~ mdy(roast_date)),
                days_since_roast = brew_date - roast_date)
@@ -92,4 +94,8 @@ elixr_coffees %>%
         coord_cartesian(ylim = c(0, 10)) +
         scale_x_continuous(breaks = seq(0, 30, 5)) +
         facet_wrap(~coffee_label)
+
+big <- processed_coffee_data %>% 
+        filter(water_volume == 800,
+               brew_method == "Hoffmann V60")
 ```
