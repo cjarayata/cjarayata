@@ -13,16 +13,14 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r}
 library(tidyverse)
 library(lubridate)
+library(ggrepel)
 ```
 
 ## Title
 
 ```{r}
-
 # read in publicly-accessible csv that you use to log your daily coffee making
 raw_coffee_data <- read_csv("https://docs.google.com/spreadsheets/d/e/2PACX-1vRFRdo6gr0uTa3LNSdcMXdAq0MGQcb3OLKKnbpVxYOMogTvnZEHhiEvlQo4SZLJfHXaBVtCAjxZGX7J/pub?gid=3766389&single=true&output=csv")
-
-names(raw_coffee_data)
 
 processed_coffee_data <- raw_coffee_data %>% 
         select(brew_date = "Timestamp",
@@ -33,19 +31,31 @@ processed_coffee_data <- raw_coffee_data %>%
                water_type = "What water are you using?",
                coffee_weight = "How much coffee did you use?",
                brew_method = "What brewing method did you use?",
+               v60_dripper = "If V60, what dripper did you use?",
                water_temp = "What water temperature did you use?",
                grind_size = "What grind size did you use?",
+               grinder = "What grinder did you use?",
                total_brew_time = "What was the total brew time?",
                rating = "Rating (Scale of 1-10)",
                notes = "Any notes to add?"
                ) %>% 
+        # do a bit of cleaning
         mutate(brew_date = mdy_hms(brew_date) %>% as_date(),
                water_type = case_when(is.na(water_type) & brew_date < "2022-05-25" ~ "Philly Tap",
-                                      is.na(water_type) ~ "Pur Filtered",
+                                      is.na(water_type) ~ "Pur Filter",
                                       TRUE ~ as.character(water_type)),
+               v60_dripper = case_when(is.na(v60_dripper) & str_detect(brew_method, "V60") ~ "Size 03 V60",
+                                   TRUE ~ as.character(v60_dripper)),
+               grinder = case_when(is.na(grinder) ~ "Baratza Encore",
+                                   TRUE ~ as.character(grinder)),
                roast_date = case_when(coffee == "Elixr - Wilton Benitez" ~ as_date("2022-05-12"),
                                       TRUE ~ mdy(roast_date)),
-               days_since_roast = brew_date - roast_date)
+               days_since_roast = brew_date - roast_date,
+               # set some factor levels to make easier for plotting
+               water_temp = factor(water_temp, levels = c("195 F", "200 F", "205 F")),
+               ratio = factor(ratio),
+               ratio = fct_reorder(ratio, as.numeric(ratio), min)
+               )
 
 # bag open date is generally the first date you roasted the coffee
 first_brew_dates <- processed_coffee_data %>% 
@@ -55,7 +65,109 @@ first_brew_dates <- processed_coffee_data %>%
 processed_coffee_data <- processed_coffee_data %>% 
         left_join(first_brew_dates) %>% 
         mutate(days_since_bag_open = brew_date - bag_open_date)
+```
 
+
+```{r}
+# retrieve the current stash that's dialed
+dialed_coffee <- read_csv("https://docs.google.com/spreadsheets/d/e/2PACX-1vRFRdo6gr0uTa3LNSdcMXdAq0MGQcb3OLKKnbpVxYOMogTvnZEHhiEvlQo4SZLJfHXaBVtCAjxZGX7J/pub?gid=561718715&single=true&output=csv") %>% 
+        filter(coffee_brand != "ReAnimator - Rwanda - Kanzu #17") # filter out reanimator just to play with it
+
+# get the coffees brewed in the past week
+recent_coffee_list <- processed_coffee_data %>% 
+                filter(between(brew_date, today() - 7, today())) %>% 
+                select(coffee_brand = coffee) %>% 
+                unique()
+
+# join the lists. for any coffee that's brewed in the past week but NOT dialed, you must still
+# be dialing it in!
+recent_coffee_list <- dialed_coffee %>% 
+        full_join(recent_coffee_list) %>% 
+        mutate(currently_brewing = case_when(is.na(currently_brewing) ~ TRUE,
+                                             TRUE ~ as.logical(currently_brewing))) %>% 
+        filter(currently_brewing)
+
+not_dialed <- anti_join(recent_coffee_list, dialed_coffee) %>% 
+        pull(coffee_brand)
+
+# pull the brews for this list
+not_dialed_brews <- processed_coffee_data %>% 
+        filter(coffee %in% not_dialed)
+
+
+```
+
+```{r}
+# for a specific coffee that you have NOT dialed, show some graphs?
+
+processed_coffee_data %>% 
+        filter(str_detect(coffee, "Pilgrim|ReAnimator"),
+               str_detect(brew_method, "V60")) %>% 
+                ggplot(aes(x = rating, y = ratio, fill = water_temp))+
+        geom_point(aes(size = 2, colour = water_temp),
+                   # position = position_jitterdodge()
+                   ) +
+        geom_label_repel(
+                aes(label = glue::glue("#{grind_size} {grinder}")),
+                show.legend = T,
+                min.segment.length = 1,
+                segment.color = "red",
+                force        = 0.5,
+                nudge_x      = 0.5,
+                direction    = "y",
+                hjust        = 0.5,
+                segment.size = 0.5
+        ) +
+        coord_cartesian(xlim = c(5, 10)) +
+        scale_x_continuous(breaks = seq(5, 10, .5)) +
+        theme_classic() +
+        guides(size = "none",
+               colour = "none",
+               fill = guide_legend(
+    title = "Water Temp.",
+    override.aes = aes(label = ""))) +
+        lemon::facet_rep_wrap(~coffee, ncol = 1, repeat.tick.labels = T) +
+        theme(text = element_text(size = 20)) +
+        labs(x = "CJ's Rating",
+             y = "Coffee/Water Ratio")
+
+# make again with all current coffees
+processed_coffee_data %>% 
+        filter(coffee %in% recent_coffee_list$coffee_brand,
+               str_detect(brew_method, "V60")) %>% 
+                        ggplot(aes(x = rating, y = ratio))+
+        geom_point(aes(size = 2, colour = water_temp),
+                   # position = position_jitterdodge()
+                   ) +
+        geom_text_repel(
+                aes(label = glue::glue("#{grind_size} {word(grinder, 2)}")),
+                show.legend = T,
+                min.segment.length = 0,
+                segment.color = "black",
+                force        = 0.5,
+                # nudge_x      = -1,
+                direction = "both",
+                # hjust        = 0.5,
+                # segment.size = 0.5,
+                box.padding = 1,
+                max.overlaps = Inf
+        ) +
+        coord_cartesian(xlim = c(5, 10)) +
+        scale_x_continuous(breaks = seq(5, 10, .5)) +
+        theme_classic() +
+        guides(size = "none",
+               colour = guide_legend(title = "Water Temp.",
+                                     override.aes = aes(label = "",
+                                                        size = 6))) +
+        lemon::facet_rep_wrap(~coffee, ncol = 1, repeat.tick.labels = T) +
+        theme(text = element_text(size = 20)) +
+        labs(x = "CJ's Rating",
+             y = "Coffee/Water Ratio")
+
+```
+
+
+```{r}
 ## lookup table for what kind of coffee varietal
 ## lookup table for what kind of process
 
@@ -94,8 +206,4 @@ elixr_coffees %>%
         coord_cartesian(ylim = c(0, 10)) +
         scale_x_continuous(breaks = seq(0, 30, 5)) +
         facet_wrap(~coffee_label)
-
-big <- processed_coffee_data %>% 
-        filter(water_volume == 800,
-               brew_method == "Hoffmann V60")
 ```
